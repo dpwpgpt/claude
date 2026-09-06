@@ -12,6 +12,7 @@ class Config:
     db_path: str
     foods_path: str
     templates_path: str
+    recipes_path: str
 
 
 def load_config() -> Config:
@@ -27,4 +28,5 @@ def load_config() -> Config:
         foods_path=os.environ.get("FOODS_DB_PATH") or os.path.join(base_dir, "data", "foods.json"),
         templates_path=os.environ.get("MEAL_TEMPLATES_PATH")
         or os.path.join(base_dir, "data", "meal_templates.json"),
+        recipes_path=os.environ.get("RECIPES_DB_PATH") or os.path.join(base_dir, "data", "recipes.json"),
     )

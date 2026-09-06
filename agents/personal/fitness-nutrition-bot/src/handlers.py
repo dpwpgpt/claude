@@ -14,6 +14,7 @@ from .composition import MatchedItem, compute_composition
 from .food_db import FoodItem
 from .nutrition import compute_targets
 from .plan_templates import MealTemplate, build_plan, pick_template
+from .recipes import Recipe, format_recipe, search_recipes
 from .storage import LogEntry, Profile, Storage
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ def _templates(context: ContextTypes.DEFAULT_TYPE) -> List[MealTemplate]:
     return context.bot_data["templates"]
 
 
+def _recipes(context: ContextTypes.DEFAULT_TYPE) -> List[Recipe]:
+    return context.bot_data["recipes"]
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Привет! Я твой личный помощник по питанию и фитнесу.\n\n"
@@ -56,6 +61,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• /profile — настроить профиль и рассчитать норму КБЖУ\n"
         "• написать состав приёма пищи текстом — посчитаю КБЖУ по своей базе продуктов\n"
         "  (например: курица 150 г, рис 100 г, огурец)\n"
+        "• /recipe <ингредиенты> — найти рецепт из меню по продуктам\n"
+        "  (например: /recipe курица картофель)\n"
         "• /plan — составить рацион на день под твою цель (можно с уточнением:\n"
         "  /plan вег или /plan низкоуглеводный)\n"
         "• /today — показать итоги за сегодня\n\n"
@@ -332,12 +339,56 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
-# --- Запись в дневник по кнопке ---
+# --- Поиск рецептов по ингредиентам ---
+
+
+async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text(
+            "Напиши после команды ингредиенты, например:\n/recipe курица картофель"
+        )
+        return
+
+    query = " ".join(context.args)
+    results = search_recipes(query, _recipes(context))
+
+    if not results:
+        await update.message.reply_text(
+            "Рецептов с такими ингредиентами в меню не нашлось. Попробуй другой запрос "
+            "или меньше ингредиентов сразу."
+        )
+        return
+
+    if len(results) == 1:
+        await update.message.reply_text(format_recipe(results[0]))
+        return
+
+    context.user_data["recipe_results"] = results
+
+    keyboard = [
+        [InlineKeyboardButton(r.name, callback_data=f"recipe:{idx}")]
+        for idx, r in enumerate(results[:20])
+    ]
+    await update.message.reply_text(
+        f"Нашёл {len(results)} рецепт(ов), выбери:", reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# --- Запись в дневник / выбор рецепта по кнопке ---
 
 
 async def handle_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+
+    if query.data.startswith("recipe:"):
+        idx = int(query.data.split(":", 1)[1])
+        results: List[Recipe] = context.user_data.get("recipe_results")
+        if not results or idx >= len(results):
+            await query.message.reply_text("Список рецептов устарел, поищи ещё раз.")
+            return
+        await query.message.reply_text(format_recipe(results[idx]))
+        return
 
     if query.data != "log_composition":
         return
