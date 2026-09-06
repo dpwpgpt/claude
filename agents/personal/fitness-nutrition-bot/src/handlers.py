@@ -1,4 +1,5 @@
 import logging
+from typing import List
 
 from telegram import (
     InlineKeyboardButton,
@@ -9,8 +10,10 @@ from telegram import (
 )
 from telegram.ext import ContextTypes, ConversationHandler
 
-from .claude_service import ClaudeService
+from .composition import MatchedItem, compute_composition
+from .food_db import FoodItem
 from .nutrition import compute_targets
+from .plan_templates import MealTemplate, build_plan, pick_template
 from .storage import LogEntry, Profile, Storage
 
 logger = logging.getLogger(__name__)
@@ -38,8 +41,12 @@ def _storage(context: ContextTypes.DEFAULT_TYPE) -> Storage:
     return context.bot_data["storage"]
 
 
-def _claude(context: ContextTypes.DEFAULT_TYPE) -> ClaudeService:
-    return context.bot_data["claude"]
+def _foods(context: ContextTypes.DEFAULT_TYPE) -> List[FoodItem]:
+    return context.bot_data["foods"]
+
+
+def _templates(context: ContextTypes.DEFAULT_TYPE) -> List[MealTemplate]:
+    return context.bot_data["templates"]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -47,9 +54,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Привет! Я твой личный помощник по питанию и фитнесу.\n\n"
         "Что я умею:\n"
         "• /profile — настроить профиль и рассчитать норму КБЖУ\n"
-        "• прислать фото меню — оценю калорийность блюд\n"
-        "• написать состав блюда текстом — посчитаю КБЖУ\n"
-        "• /plan — составить рацион на день под твою цель\n"
+        "• написать состав приёма пищи текстом — посчитаю КБЖУ по своей базе продуктов\n"
+        "  (например: курица 150 г, рис 100 г, огурец)\n"
+        "• /plan — составить рацион на день под твою цель (можно с уточнением:\n"
+        "  /plan вег или /plan низкоуглеводный)\n"
         "• /today — показать итоги за сегодня\n\n"
         "Начни с /profile, чтобы я знал твою норму."
     )
@@ -171,8 +179,7 @@ async def profile_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"Жиры: {targets.fat_g:.0f} г\n"
         f"Углеводы: {targets.carbs_g:.0f} г\n\n"
         "Теперь можешь:\n"
-        "• прислать фото меню — оценю КБЖУ блюд\n"
-        "• написать состав блюда текстом — посчитаю калории\n"
+        "• написать состав приёма пищи текстом — посчитаю калории\n"
         "• использовать /plan — составлю рацион на день\n"
         "• использовать /today — покажу итоги за сегодня",
         reply_markup=ReplyKeyboardRemove(),
@@ -198,33 +205,34 @@ async def plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    await update.message.reply_text("Составляю рацион на день, это может занять немного времени...")
+    foods = _foods(context)
+    templates = _templates(context)
 
-    preferences = " ".join(context.args) if context.args else ""
-    try:
-        result = _claude(context).generate_diet_plan(
-            profile.target_calories, profile.target_protein_g,
-            profile.target_fat_g, profile.target_carbs_g,
-            profile.goal, preferences,
-        )
-    except Exception:
-        logger.exception("Failed to generate diet plan")
-        await update.message.reply_text("Не получилось составить рацион, попробуй ещё раз чуть позже.")
-        return
+    target_protein_pct = profile.target_protein_g * 4 / profile.target_calories
+    target_fat_pct = profile.target_fat_g * 9 / profile.target_calories
+    target_carbs_pct = profile.target_carbs_g * 4 / profile.target_calories
 
-    lines = [result.summary, ""]
-    for item in result.meals:
-        lines.append(
-            f"{item.meal}: {item.dish} — {item.calories:.0f} ккал "
-            f"(Б{item.protein_g:.0f}/Ж{item.fat_g:.0f}/У{item.carbs_g:.0f})"
-        )
+    keyword = " ".join(context.args) if context.args else None
+    template = pick_template(templates, foods, target_protein_pct, target_fat_pct, target_carbs_pct, keyword)
+    result = build_plan(template, foods, profile.target_calories)
+
+    lines = [f"Рацион «{result.template_name}» на {profile.target_calories:.0f} ккал:\n"]
+    current_meal = None
+    for line in result.lines:
+        if line.meal != current_meal:
+            current_meal = line.meal
+            lines.append(f"\n{current_meal}:")
+        lines.append(f"• {line.food_name} — {line.grams:.0f} г ({line.calories:.0f} ккал)")
+
     lines.append("")
     lines.append(
         f"Итого: {result.total_calories:.0f} ккал "
-        f"(Б{result.total_protein_g:.0f}/Ж{result.total_fat_g:.0f}/У{result.total_carbs_g:.0f})"
+        f"(Б{result.total_protein:.0f}/Ж{result.total_fat:.0f}/У{result.total_carbs:.0f})"
     )
-    lines.append("")
-    lines.append(result.recommendations)
+    lines.append(
+        "\nЭто приблизительный рацион по шаблону, реальные пропорции БЖУ могут "
+        "немного отличаться от целевых. Другой шаблон: /plan вег или /plan низкоуглеводный."
+    )
 
     await update.message.reply_text("\n".join(lines))
 
@@ -240,7 +248,8 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not entries:
         await update.message.reply_text(
-            "Сегодня ты ещё ничего не записал(а). Пришли фото меню или опиши приём пищи текстом."
+            "Сегодня ты ещё ничего не записал(а). Опиши приём пищи текстом, например: "
+            "курица 150 г, рис 100 г."
         )
         return
 
@@ -270,47 +279,7 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
-# --- Фото меню ---
-
-
-async def handle_menu_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    photo = update.message.photo[-1]
-    file = await photo.get_file()
-    image_bytes = bytes(await file.download_as_bytearray())
-
-    await update.message.reply_text("Разбираю меню...")
-
-    try:
-        analysis = _claude(context).analyze_menu_photo(image_bytes)
-    except Exception:
-        logger.exception("Failed to analyze menu photo")
-        await update.message.reply_text("Не получилось распознать меню, попробуй прислать фото почётче.")
-        return
-
-    if not analysis.items:
-        await update.message.reply_text("Не нашёл блюд на фото. Попробуй прислать другое фото.")
-        return
-
-    context.user_data["pending_menu"] = analysis.items
-
-    lines = ["Вот что удалось разобрать:\n"]
-    keyboard = []
-    for idx, item in enumerate(analysis.items):
-        lines.append(
-            f"{idx + 1}. {item.name} ({item.portion}) — {item.calories:.0f} ккал "
-            f"(Б{item.protein_g:.0f}/Ж{item.fat_g:.0f}/У{item.carbs_g:.0f}, {item.confidence})"
-        )
-        keyboard.append(
-            [InlineKeyboardButton(f"Записать {idx + 1}", callback_data=f"log_menu:{idx}")]
-        )
-
-    if analysis.notes:
-        lines.append(f"\n{analysis.notes}")
-
-    await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
-
-
-# --- Текстовое описание блюда ---
+# --- Текстовое описание приёма пищи ---
 
 
 async def handle_text_meal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -318,28 +287,49 @@ async def handle_text_meal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not description:
         return
 
-    await update.message.reply_text("Считаю КБЖУ...")
-
-    try:
-        estimate = _claude(context).estimate_dish(description)
-    except Exception:
-        logger.exception("Failed to estimate dish")
-        await update.message.reply_text("Не получилось посчитать КБЖУ, попробуй описать состав подробнее.")
+    matches = compute_composition(description, _foods(context))
+    if not matches:
+        await update.message.reply_text(
+            "Не понял состав. Опиши в формате: курица 150 г, рис 100 г, огурец."
+        )
         return
 
-    context.user_data["pending_dish"] = estimate
+    matched = [m for m in matches if m.food is not None]
+    unmatched = [m for m in matches if m.food is None]
 
-    lines = [f"{estimate.dish_name}:\n"]
-    for ing in estimate.ingredients:
-        lines.append(f"• {ing.name} ({ing.amount}) — {ing.calories:.0f} ккал")
+    lines = []
+    for m in matched:
+        lines.append(f"• {m.food.name} — {m.grams:.0f} г — {m.calories:.0f} ккал")
+
+    if unmatched:
+        names = ", ".join(m.query for m in unmatched)
+        lines.append(f"\nНе нашёл в базе: {names}. Попробуй переформулировать название.")
+
+    if not matched:
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    total_calories = sum(m.calories for m in matched)
+    total_protein = sum(m.protein for m in matched)
+    total_fat = sum(m.fat for m in matched)
+    total_carbs = sum(m.carbs for m in matched)
+
     lines.append("")
     lines.append(
-        f"Итого: {estimate.total_calories:.0f} ккал "
-        f"(Б{estimate.total_protein_g:.0f}/Ж{estimate.total_fat_g:.0f}/У{estimate.total_carbs_g:.0f})"
+        f"Итого: {total_calories:.0f} ккал (Б{total_protein:.0f}/Ж{total_fat:.0f}/У{total_carbs:.0f})"
     )
 
-    keyboard = [[InlineKeyboardButton("Записать в дневник", callback_data="log_dish")]]
+    context.user_data["pending_composition"] = matched
+
+    keyboard = [[InlineKeyboardButton("Записать в дневник", callback_data="log_composition")]]
     await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Распознавание фото не поддерживается. Опиши состав приёма пищи текстом, "
+        "например: курица 150 г, рис 100 г, огурец."
+    )
 
 
 # --- Запись в дневник по кнопке ---
@@ -348,38 +338,26 @@ async def handle_text_meal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def handle_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    storage = _storage(context)
-    user_id = update.effective_user.id
 
-    if query.data.startswith("log_menu:"):
-        idx = int(query.data.split(":", 1)[1])
-        items = context.user_data.get("pending_menu")
-        if not items or idx >= len(items):
-            await query.message.reply_text("Это меню уже устарело, пришли фото ещё раз.")
-            return
-        item = items[idx]
-        storage.add_log_entry(
-            user_id,
-            LogEntry(
-                label=item.name, calories=item.calories,
-                protein_g=item.protein_g, fat_g=item.fat_g, carbs_g=item.carbs_g,
-            ),
-        )
-        await query.message.reply_text(f"Записал: {item.name} — {item.calories:.0f} ккал")
+    if query.data != "log_composition":
+        return
 
-    elif query.data == "log_dish":
-        estimate = context.user_data.get("pending_dish")
-        if not estimate:
-            await query.message.reply_text("Не нашёл это блюдо, опиши его ещё раз.")
-            return
-        storage.add_log_entry(
-            user_id,
-            LogEntry(
-                label=estimate.dish_name, calories=estimate.total_calories,
-                protein_g=estimate.total_protein_g, fat_g=estimate.total_fat_g,
-                carbs_g=estimate.total_carbs_g,
-            ),
-        )
-        await query.message.reply_text(
-            f"Записал: {estimate.dish_name} — {estimate.total_calories:.0f} ккал"
-        )
+    matched: List[MatchedItem] = context.user_data.get("pending_composition")
+    if not matched:
+        await query.message.reply_text("Не нашёл этот приём пищи, опиши его ещё раз.")
+        return
+
+    label = ", ".join(m.food.name for m in matched)
+    total_calories = sum(m.calories for m in matched)
+    total_protein = sum(m.protein for m in matched)
+    total_fat = sum(m.fat for m in matched)
+    total_carbs = sum(m.carbs for m in matched)
+
+    _storage(context).add_log_entry(
+        update.effective_user.id,
+        LogEntry(
+            label=label, calories=total_calories,
+            protein_g=total_protein, fat_g=total_fat, carbs_g=total_carbs,
+        ),
+    )
+    await query.message.reply_text(f"Записал: {label} — {total_calories:.0f} ккал")

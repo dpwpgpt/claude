@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -10,9 +9,9 @@ load_dotenv()
 @dataclass(frozen=True)
 class Config:
     telegram_token: str
-    anthropic_api_key: Optional[str]
-    claude_model: str
     db_path: str
+    foods_path: str
+    templates_path: str
 
 
 def load_config() -> Config:
@@ -20,9 +19,12 @@ def load_config() -> Config:
     if not telegram_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set (see .env.example)")
 
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     return Config(
         telegram_token=telegram_token,
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-        claude_model=os.environ.get("CLAUDE_MODEL", "claude-opus-5"),
-        db_path=os.environ.get("BOT_DB_PATH", "fitness_bot.db"),
+        db_path=os.environ.get("BOT_DB_PATH") or "fitness_bot.db",
+        foods_path=os.environ.get("FOODS_DB_PATH") or os.path.join(base_dir, "data", "foods.json"),
+        templates_path=os.environ.get("MEAL_TEMPLATES_PATH")
+        or os.path.join(base_dir, "data", "meal_templates.json"),
     )
