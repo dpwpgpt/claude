@@ -1,0 +1,9 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - BOT_DB_PATH=/app/data/fitness_bot.db
+    volumes:
+      - ./data:/app/data
