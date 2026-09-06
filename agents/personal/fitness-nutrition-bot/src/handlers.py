@@ -37,6 +37,14 @@ GOAL_OPTIONS = {
     "Набор массы": "gain",
 }
 
+BTN_RECIPE = "🔍 Найти рецепт"
+BTN_CALCULATE = "🧮 Рассчитать КБЖУ"
+BTN_LOG = "📝 Записать приём пищи"
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [[BTN_RECIPE], [BTN_CALCULATE, BTN_LOG]], resize_keyboard=True
+)
+
 
 def _storage(context: ContextTypes.DEFAULT_TYPE) -> Storage:
     return context.bot_data["storage"]
@@ -57,17 +65,40 @@ def _recipes(context: ContextTypes.DEFAULT_TYPE) -> List[Recipe]:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Привет! Я твой личный помощник по питанию и фитнесу.\n\n"
-        "Что я умею:\n"
+        "Кнопки внизу:\n"
+        f"• {BTN_RECIPE} — найти рецепт из меню по продуктам\n"
+        f"• {BTN_CALCULATE} — посчитать калории по составу\n"
+        f"• {BTN_LOG} — посчитать и записать в дневник\n\n"
+        "Команды:\n"
         "• /profile — настроить профиль и рассчитать норму КБЖУ\n"
-        "• написать состав приёма пищи текстом — посчитаю КБЖУ по своей базе продуктов\n"
-        "  (например: курица 150 г, рис 100 г, огурец)\n"
-        "• /recipe <ингредиенты> — найти рецепт из меню по продуктам\n"
-        "  (например: /recipe курица картофель)\n"
         "• /plan — составить рацион на день под твою цель (можно с уточнением:\n"
         "  /plan вег или /plan низкоуглеводный)\n"
         "• /today — показать итоги за сегодня\n\n"
-        "Начни с /profile, чтобы я знал твою норму."
+        "Начни с /profile, чтобы я знал твою норму.",
+        reply_markup=MAIN_KEYBOARD,
     )
+
+
+# --- Кнопки главного меню ---
+
+
+async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.message.text
+
+    if text == BTN_RECIPE:
+        context.user_data["awaiting"] = "recipe"
+        await update.message.reply_text("Какие ингредиенты искать? Например: курица картофель")
+    elif text == BTN_CALCULATE:
+        context.user_data.pop("awaiting", None)
+        await update.message.reply_text(
+            "Опиши состав, например: курица 150 г, рис 100 г, огурец"
+        )
+    elif text == BTN_LOG:
+        context.user_data.pop("awaiting", None)
+        await update.message.reply_text(
+            "Опиши, что съел(а), например: курица 150 г, рис 100 г. "
+            "Посчитаю КБЖУ и предложу записать в дневник."
+        )
 
 
 # --- Профиль ---
@@ -185,18 +216,15 @@ async def profile_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"Белки: {targets.protein_g:.0f} г\n"
         f"Жиры: {targets.fat_g:.0f} г\n"
         f"Углеводы: {targets.carbs_g:.0f} г\n\n"
-        "Теперь можешь:\n"
-        "• написать состав приёма пищи текстом — посчитаю калории\n"
-        "• использовать /plan — составлю рацион на день\n"
-        "• использовать /today — покажу итоги за сегодня",
-        reply_markup=ReplyKeyboardRemove(),
+        "Теперь можешь пользоваться кнопками внизу или командой /plan, /today.",
+        reply_markup=MAIN_KEYBOARD,
     )
     return ConversationHandler.END
 
 
 async def profile_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
-        "Настройка профиля отменена.", reply_markup=ReplyKeyboardRemove()
+        "Настройка профиля отменена.", reply_markup=MAIN_KEYBOARD
     )
     return ConversationHandler.END
 
@@ -294,6 +322,10 @@ async def handle_text_meal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not description:
         return
 
+    if context.user_data.pop("awaiting", None) == "recipe":
+        await _run_recipe_search(update, context, description)
+        return
+
     matches = compute_composition(description, _foods(context))
     if not matches:
         await update.message.reply_text(
@@ -342,14 +374,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --- Поиск рецептов по ингредиентам ---
 
 
-async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.args:
-        await update.message.reply_text(
-            "Напиши после команды ингредиенты, например:\n/recipe курица картофель"
-        )
-        return
-
-    query = " ".join(context.args)
+async def _run_recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str) -> None:
     results = search_recipes(query, _recipes(context))
 
     if not results:
@@ -372,6 +397,16 @@ async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         f"Нашёл {len(results)} рецепт(ов), выбери:", reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
+async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text(
+            "Напиши после команды ингредиенты, например:\n/recipe курица картофель"
+        )
+        return
+
+    await _run_recipe_search(update, context, " ".join(context.args))
 
 
 # --- Запись в дневник / выбор рецепта по кнопке ---
