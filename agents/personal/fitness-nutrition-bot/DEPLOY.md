@@ -57,12 +57,11 @@ nano .env
 
 ```
 TELEGRAM_BOT_TOKEN=токен_от_botfather
-ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 `BOT_DB_PATH` в `.env` можно не трогать — в docker-compose.yml он уже
-переопределён на `/app/data/fitness_bot.db`, файл базы сохранится в папке
-`./data` на хосте и переживёт пересборку контейнера.
+переопределён на `/app/state/fitness_bot.db`, файл базы сохранится в папке
+`./state` на хосте и переживёт пересборку контейнера.
 
 ## 5. Запусти бота
 
@@ -103,9 +102,9 @@ docker compose logs -f --tail 100
 
 ## Бэкап дневника питания
 
-Вся база — это один файл `./data/fitness_bot.db` на хосте. Достаточно
+Вся база — это один файл `./state/fitness_bot.db` на хосте. Достаточно
 периодически копировать его:
 
 ```bash
-cp data/fitness_bot.db data/fitness_bot.db.bak-$(date +%F)
+cp state/fitness_bot.db state/fitness_bot.db.bak-$(date +%F)
 ```

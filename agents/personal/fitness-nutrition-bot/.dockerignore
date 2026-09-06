@@ -3,5 +3,5 @@ __pycache__
 *.pyc
 .env
 .git
-data
+state
 fitness_bot.db
