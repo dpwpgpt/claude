@@ -14,6 +14,7 @@ from . import handlers as h
 from .config import load_config
 from .food_db import load_foods
 from .plan_templates import load_templates
+from .recipes import load_recipes
 from .storage import Storage
 
 logging.basicConfig(
@@ -29,6 +30,7 @@ def build_application() -> Application:
     application.bot_data["storage"] = Storage(config.db_path)
     application.bot_data["foods"] = load_foods(config.foods_path)
     application.bot_data["templates"] = load_templates(config.templates_path)
+    application.bot_data["recipes"] = load_recipes(config.recipes_path)
 
     profile_conv = ConversationHandler(
         entry_points=[CommandHandler("profile", h.profile_start)],
@@ -47,6 +49,7 @@ def build_application() -> Application:
     application.add_handler(profile_conv)
     application.add_handler(CommandHandler("plan", h.plan))
     application.add_handler(CommandHandler("today", h.today))
+    application.add_handler(CommandHandler("recipe", h.recipe_search))
     application.add_handler(CallbackQueryHandler(h.handle_log_callback))
     application.add_handler(MessageHandler(filters.PHOTO, h.handle_photo), group=1)
     application.add_handler(
