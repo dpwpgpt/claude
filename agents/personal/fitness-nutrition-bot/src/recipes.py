@@ -45,6 +45,13 @@ def _term_matches(term: str, haystack: str) -> bool:
     return False
 
 
+CATEGORY_ORDER = ["завтрак", "перекус", "обед", "ужин"]
+
+
+def recipes_by_category(category: str, recipes: List[Recipe]) -> List[Recipe]:
+    return sorted((r for r in recipes if r.category == category), key=lambda r: r.name)
+
+
 def search_recipes(query: str, recipes: List[Recipe]) -> List[Recipe]:
     terms = [normalize(t) for t in query.replace(",", " ").split() if t.strip()]
     if not terms:

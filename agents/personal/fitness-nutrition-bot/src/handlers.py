@@ -15,7 +15,7 @@ from .composition import MatchedItem, compute_composition
 from .food_db import FoodItem
 from .nutrition import compute_targets
 from .plan_templates import MealTemplate, build_plan, pick_template
-from .recipes import Recipe, format_recipe, search_recipes
+from .recipes import Recipe, format_recipe, recipes_by_category, search_recipes
 from .storage import LogEntry, Profile, Storage
 
 logger = logging.getLogger(__name__)
@@ -39,13 +39,24 @@ GOAL_OPTIONS = {
 }
 
 BTN_RECIPE = "🔍 Найти рецепт"
+BTN_MENU = "📋 Меню"
 BTN_CALCULATE = "🧮 Рассчитать КБЖУ"
 BTN_LOG = "📝 Записать приём пищи"
 BTN_REPORT = "📊 Отчёт"
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[BTN_RECIPE], [BTN_CALCULATE, BTN_LOG], [BTN_REPORT]], resize_keyboard=True
+    [[BTN_RECIPE, BTN_MENU], [BTN_CALCULATE, BTN_LOG], [BTN_REPORT]], resize_keyboard=True
 )
+
+MENU_CATEGORIES = [
+    ("завтрак", "🍳 Завтраки"),
+    ("перекус", "🍎 Перекусы"),
+    ("обед", "🍲 Обеды"),
+    ("ужин", "🍽 Ужины"),
+]
+CATEGORY_LABELS = dict(MENU_CATEGORIES)
+CATEGORY_SLUGS = {"завтрак": "breakfast", "перекус": "snack", "обед": "lunch", "ужин": "dinner"}
+SLUG_CATEGORIES = {slug: category for category, slug in CATEGORY_SLUGS.items()}
 
 
 def _storage(context: ContextTypes.DEFAULT_TYPE) -> Storage:
@@ -69,6 +80,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Привет! Я твой личный помощник по питанию и фитнесу.\n\n"
         "Кнопки внизу:\n"
         f"• {BTN_RECIPE} — найти рецепт из меню по продуктам\n"
+        f"• {BTN_MENU} — открыть меню по разделам: завтраки, перекусы, обеды, ужины\n"
         f"• {BTN_CALCULATE} — посчитать калории по составу\n"
         f"• {BTN_LOG} — посчитать и записать в дневник\n"
         f"• {BTN_REPORT} — отчёт по записям: сегодня, вчера или за 7 дней\n\n"
@@ -91,6 +103,9 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if text == BTN_RECIPE:
         context.user_data["awaiting"] = "recipe"
         await update.message.reply_text("Какие ингредиенты искать? Например: курица картофель")
+    elif text == BTN_MENU:
+        context.user_data.pop("awaiting", None)
+        await menu_categories(update, context)
     elif text == BTN_CALCULATE:
         context.user_data.pop("awaiting", None)
         await update.message.reply_text(
@@ -440,6 +455,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+# --- Раздел меню по категориям ---
+
+
+async def menu_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"menucat:{CATEGORY_SLUGS[category]}")]
+        for category, label in MENU_CATEGORIES
+    ]
+    await update.message.reply_text(
+        "Выбери раздел меню:", reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 # --- Поиск рецептов по ингредиентам ---
 
 
@@ -494,6 +522,35 @@ async def handle_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             text = _format_week_report(storage, user_id)
         await query.message.reply_text(text)
+        return
+
+    if query.data.startswith("menucat:"):
+        category = SLUG_CATEGORIES.get(query.data.split(":", 1)[1])
+        dishes = recipes_by_category(category, _recipes(context)) if category else []
+        if not dishes:
+            await query.message.reply_text("В этом разделе пока нет рецептов.")
+            return
+        keyboard = [
+            [InlineKeyboardButton(r.name, callback_data=f"menuitem:{query.data.split(':', 1)[1]}:{i}")]
+            for i, r in enumerate(dishes)
+        ]
+        await query.message.reply_text(
+            f"{CATEGORY_LABELS[category]}:", reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if query.data.startswith("menuitem:"):
+        _, slug, idx_str = query.data.split(":", 2)
+        category = SLUG_CATEGORIES.get(slug)
+        dishes = recipes_by_category(category, _recipes(context)) if category else []
+        try:
+            recipe = dishes[int(idx_str)]
+        except (ValueError, IndexError):
+            await query.message.reply_text(
+                "Не нашёл этот рецепт, открой раздел меню заново."
+            )
+            return
+        await query.message.reply_text(format_recipe(recipe))
         return
 
     if query.data != "log_composition":
