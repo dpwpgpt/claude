@@ -49,6 +49,7 @@ def build_application() -> Application:
     application.add_handler(profile_conv)
     application.add_handler(CommandHandler("plan", h.plan))
     application.add_handler(CommandHandler("today", h.today))
+    application.add_handler(CommandHandler("yesterday", h.yesterday))
     application.add_handler(CommandHandler("recipe", h.recipe_search))
     application.add_handler(CommandHandler("report", h.report))
     application.add_handler(

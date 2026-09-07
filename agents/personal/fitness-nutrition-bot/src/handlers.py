@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import List
 
 from telegram import (
@@ -41,7 +41,7 @@ GOAL_OPTIONS = {
 BTN_RECIPE = "🔍 Найти рецепт"
 BTN_CALCULATE = "🧮 Рассчитать КБЖУ"
 BTN_LOG = "📝 Записать приём пищи"
-BTN_REPORT = "📊 Отчёт за 7 дней"
+BTN_REPORT = "📊 Отчёт"
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [[BTN_RECIPE], [BTN_CALCULATE, BTN_LOG], [BTN_REPORT]], resize_keyboard=True
@@ -71,7 +71,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"• {BTN_RECIPE} — найти рецепт из меню по продуктам\n"
         f"• {BTN_CALCULATE} — посчитать калории по составу\n"
         f"• {BTN_LOG} — посчитать и записать в дневник\n"
-        f"• {BTN_REPORT} — отчёт по записям за последнюю неделю\n\n"
+        f"• {BTN_REPORT} — отчёт по записям: сегодня, вчера или за 7 дней\n\n"
         "Команды:\n"
         "• /profile — настроить профиль и рассчитать норму КБЖУ\n"
         "• /plan — составить рацион на день под твою цель (можно с уточнением:\n"
@@ -104,7 +104,7 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     elif text == BTN_REPORT:
         context.user_data.pop("awaiting", None)
-        await report(update, context)
+        await report_menu(update, context)
 
 
 # --- Профиль ---
@@ -278,28 +278,24 @@ async def plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines))
 
 
-# --- Итоги за день ---
+# --- Отчёты ---
+
+REPORT_DAYS = 7
 
 
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    storage = _storage(context)
-    user_id = update.effective_user.id
+def _format_day_report(storage: Storage, user_id: int, target_date: date, label: str) -> str:
     profile = storage.get_profile(user_id)
-    entries = storage.today_entries(user_id)
+    entries = storage.entries_for_date(user_id, target_date.isoformat())
 
     if not entries:
-        await update.message.reply_text(
-            "Сегодня ты ещё ничего не записал(а). Опиши приём пищи текстом, например: "
-            "курица 150 г, рис 100 г."
-        )
-        return
+        return f"За {label} записей нет."
 
     total_cal = sum(e.calories for e in entries)
     total_protein = sum(e.protein_g for e in entries)
     total_fat = sum(e.fat_g for e in entries)
     total_carbs = sum(e.carbs_g for e in entries)
 
-    lines = ["Записи за сегодня:"]
+    lines = [f"Записи за {label}:"]
     for e in entries:
         lines.append(f"• {e.label} — {e.calories:.0f} ккал")
     lines.append("")
@@ -317,26 +313,18 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         lines.append(f"Осталось: {profile.target_calories - total_cal:.0f} ккал")
 
-    await update.message.reply_text("\n".join(lines))
+    return "\n".join(lines)
 
 
-# --- Отчёт за неделю ---
-
-REPORT_DAYS = 7
-
-
-async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    storage = _storage(context)
-    user_id = update.effective_user.id
+def _format_week_report(storage: Storage, user_id: int) -> str:
     profile = storage.get_profile(user_id)
     summaries = storage.range_summary(user_id, REPORT_DAYS)
 
     if not summaries:
-        await update.message.reply_text(
+        return (
             f"За последние {REPORT_DAYS} дней записей нет. Опиши приём пищи текстом, "
             "например: курица 150 г, рис 100 г."
         )
-        return
 
     lines = [f"Отчёт за последние {REPORT_DAYS} дней:\n"]
     for s in summaries:
@@ -360,7 +348,39 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if profile:
         lines.append(f"Норма: {profile.target_calories:.0f} ккал/день")
 
-    await update.message.reply_text("\n".join(lines))
+    return "\n".join(lines)
+
+
+REPORT_PERIODS = {
+    "today": "Сегодня",
+    "yesterday": "Вчера",
+    "week": "7 дней",
+}
+
+
+async def report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"report:{key}")]
+        for key, label in REPORT_PERIODS.items()
+    ]
+    await update.message.reply_text("За какой период?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = _format_day_report(_storage(context), update.effective_user.id, date.today(), "сегодня")
+    await update.message.reply_text(text)
+
+
+async def yesterday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = _format_day_report(
+        _storage(context), update.effective_user.id, date.today() - timedelta(days=1), "вчера"
+    )
+    await update.message.reply_text(text)
+
+
+async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = _format_week_report(_storage(context), update.effective_user.id)
+    await update.message.reply_text(text)
 
 
 # --- Текстовое описание приёма пищи ---
@@ -456,12 +476,25 @@ async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await _run_recipe_search(update, context, " ".join(context.args))
 
 
-# --- Запись в дневник по кнопке ---
+# --- Запись в дневник / выбор периода отчёта по кнопке ---
 
 
 async def handle_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+
+    if query.data.startswith("report:"):
+        period = query.data.split(":", 1)[1]
+        storage = _storage(context)
+        user_id = update.effective_user.id
+        if period == "today":
+            text = _format_day_report(storage, user_id, date.today(), "сегодня")
+        elif period == "yesterday":
+            text = _format_day_report(storage, user_id, date.today() - timedelta(days=1), "вчера")
+        else:
+            text = _format_week_report(storage, user_id)
+        await query.message.reply_text(text)
+        return
 
     if query.data != "log_composition":
         return

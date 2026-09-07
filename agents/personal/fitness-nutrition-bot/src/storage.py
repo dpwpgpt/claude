@@ -153,7 +153,7 @@ class Storage:
                 ),
             )
 
-    def today_entries(self, user_id: int) -> List[LogEntry]:
+    def entries_for_date(self, user_id: int, log_date: str) -> List[LogEntry]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -162,9 +162,12 @@ class Storage:
                 WHERE user_id = ? AND log_date = ?
                 ORDER BY id
                 """,
-                (user_id, date.today().isoformat()),
+                (user_id, log_date),
             ).fetchall()
         return [LogEntry(*row) for row in rows]
+
+    def today_entries(self, user_id: int) -> List[LogEntry]:
+        return self.entries_for_date(user_id, date.today().isoformat())
 
     def range_summary(self, user_id: int, days: int) -> List[DaySummary]:
         start_date = date.today() - timedelta(days=days - 1)
