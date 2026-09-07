@@ -54,7 +54,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("report", h.report))
     application.add_handler(
         MessageHandler(
-            filters.Text([h.BTN_RECIPE, h.BTN_CALCULATE, h.BTN_LOG, h.BTN_REPORT]),
+            filters.Text([h.BTN_RECIPE, h.BTN_MENU, h.BTN_CALCULATE, h.BTN_LOG, h.BTN_REPORT]),
             h.handle_menu_button,
         )
     )
