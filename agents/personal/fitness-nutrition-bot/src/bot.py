@@ -59,10 +59,11 @@ def build_application() -> Application:
         )
     )
     application.add_handler(CallbackQueryHandler(h.handle_log_callback))
-    application.add_handler(MessageHandler(filters.PHOTO, h.handle_photo), group=1)
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, h.handle_text_meal), group=1
-    )
+    application.add_handler(MessageHandler(filters.PHOTO, h.handle_photo))
+    # Must be registered after the button-text handler above: PTB only runs the
+    # first matching handler within a group, so button taps (which are also
+    # plain text) are consumed there and never reach this catch-all.
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, h.handle_text_meal))
 
     return application
 
