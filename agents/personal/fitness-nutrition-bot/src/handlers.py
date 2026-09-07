@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import List
 
 from telegram import (
@@ -40,9 +41,10 @@ GOAL_OPTIONS = {
 BTN_RECIPE = "🔍 Найти рецепт"
 BTN_CALCULATE = "🧮 Рассчитать КБЖУ"
 BTN_LOG = "📝 Записать приём пищи"
+BTN_REPORT = "📊 Отчёт за 7 дней"
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[BTN_RECIPE], [BTN_CALCULATE, BTN_LOG]], resize_keyboard=True
+    [[BTN_RECIPE], [BTN_CALCULATE, BTN_LOG], [BTN_REPORT]], resize_keyboard=True
 )
 
 
@@ -68,7 +70,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Кнопки внизу:\n"
         f"• {BTN_RECIPE} — найти рецепт из меню по продуктам\n"
         f"• {BTN_CALCULATE} — посчитать калории по составу\n"
-        f"• {BTN_LOG} — посчитать и записать в дневник\n\n"
+        f"• {BTN_LOG} — посчитать и записать в дневник\n"
+        f"• {BTN_REPORT} — отчёт по записям за последнюю неделю\n\n"
         "Команды:\n"
         "• /profile — настроить профиль и рассчитать норму КБЖУ\n"
         "• /plan — составить рацион на день под твою цель (можно с уточнением:\n"
@@ -99,6 +102,9 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Опиши, что съел(а), например: курица 150 г, рис 100 г. "
             "Посчитаю КБЖУ и предложу записать в дневник."
         )
+    elif text == BTN_REPORT:
+        context.user_data.pop("awaiting", None)
+        await report(update, context)
 
 
 # --- Профиль ---
@@ -310,6 +316,49 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"У {profile.target_carbs_g:.0f})"
         )
         lines.append(f"Осталось: {profile.target_calories - total_cal:.0f} ккал")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+# --- Отчёт за неделю ---
+
+REPORT_DAYS = 7
+
+
+async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    storage = _storage(context)
+    user_id = update.effective_user.id
+    profile = storage.get_profile(user_id)
+    summaries = storage.range_summary(user_id, REPORT_DAYS)
+
+    if not summaries:
+        await update.message.reply_text(
+            f"За последние {REPORT_DAYS} дней записей нет. Опиши приём пищи текстом, "
+            "например: курица 150 г, рис 100 г."
+        )
+        return
+
+    lines = [f"Отчёт за последние {REPORT_DAYS} дней:\n"]
+    for s in summaries:
+        day = datetime.strptime(s.log_date, "%Y-%m-%d").strftime("%d.%m")
+        line = (
+            f"{day}: {s.calories:.0f} ккал "
+            f"(Б{s.protein_g:.0f}/Ж{s.fat_g:.0f}/У{s.carbs_g:.0f})"
+        )
+        if profile:
+            diff = s.calories - profile.target_calories
+            sign = "+" if diff >= 0 else ""
+            line += f" [{sign}{diff:.0f} к норме]"
+        lines.append(line)
+
+    days_with_entries = len(summaries)
+    avg_calories = sum(s.calories for s in summaries) / days_with_entries
+
+    lines.append("")
+    lines.append(f"Дней с записями: {days_with_entries} из {REPORT_DAYS}")
+    lines.append(f"Средние калории в записанные дни: {avg_calories:.0f} ккал")
+    if profile:
+        lines.append(f"Норма: {profile.target_calories:.0f} ккал/день")
 
     await update.message.reply_text("\n".join(lines))
 

@@ -50,8 +50,12 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("plan", h.plan))
     application.add_handler(CommandHandler("today", h.today))
     application.add_handler(CommandHandler("recipe", h.recipe_search))
+    application.add_handler(CommandHandler("report", h.report))
     application.add_handler(
-        MessageHandler(filters.Text([h.BTN_RECIPE, h.BTN_CALCULATE, h.BTN_LOG]), h.handle_menu_button)
+        MessageHandler(
+            filters.Text([h.BTN_RECIPE, h.BTN_CALCULATE, h.BTN_LOG, h.BTN_REPORT]),
+            h.handle_menu_button,
+        )
     )
     application.add_handler(CallbackQueryHandler(h.handle_log_callback))
     application.add_handler(MessageHandler(filters.PHOTO, h.handle_photo), group=1)

@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 SCHEMA = """
@@ -52,6 +52,15 @@ class Profile:
 @dataclass
 class LogEntry:
     label: str
+    calories: float
+    protein_g: float
+    fat_g: float
+    carbs_g: float
+
+
+@dataclass
+class DaySummary:
+    log_date: str
     calories: float
     protein_g: float
     fat_g: float
@@ -156,3 +165,18 @@ class Storage:
                 (user_id, date.today().isoformat()),
             ).fetchall()
         return [LogEntry(*row) for row in rows]
+
+    def range_summary(self, user_id: int, days: int) -> List[DaySummary]:
+        start_date = date.today() - timedelta(days=days - 1)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT log_date, SUM(calories), SUM(protein_g), SUM(fat_g), SUM(carbs_g)
+                FROM log_entries
+                WHERE user_id = ? AND log_date >= ?
+                GROUP BY log_date
+                ORDER BY log_date
+                """,
+                (user_id, start_date.isoformat()),
+            ).fetchall()
+        return [DaySummary(*row) for row in rows]
