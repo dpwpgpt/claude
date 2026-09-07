@@ -388,15 +388,13 @@ async def _run_recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text(format_recipe(results[0]))
         return
 
-    context.user_data["recipe_results"] = results
+    header = f"Нашёл {len(results)} рецепт(ов):"
+    if len(results) > 8:
+        header += "\nЕсли это слишком много, добавь ещё один ингредиент, например: курица картофель"
+    await update.message.reply_text(header)
 
-    keyboard = [
-        [InlineKeyboardButton(r.name, callback_data=f"recipe:{idx}")]
-        for idx, r in enumerate(results[:20])
-    ]
-    await update.message.reply_text(
-        f"Нашёл {len(results)} рецепт(ов), выбери:", reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    for recipe in results:
+        await update.message.reply_text(format_recipe(recipe))
 
 
 async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -409,21 +407,12 @@ async def recipe_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await _run_recipe_search(update, context, " ".join(context.args))
 
 
-# --- Запись в дневник / выбор рецепта по кнопке ---
+# --- Запись в дневник по кнопке ---
 
 
 async def handle_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-
-    if query.data.startswith("recipe:"):
-        idx = int(query.data.split(":", 1)[1])
-        results: List[Recipe] = context.user_data.get("recipe_results")
-        if not results or idx >= len(results):
-            await query.message.reply_text("Список рецептов устарел, поищи ещё раз.")
-            return
-        await query.message.reply_text(format_recipe(results[idx]))
-        return
 
     if query.data != "log_composition":
         return
