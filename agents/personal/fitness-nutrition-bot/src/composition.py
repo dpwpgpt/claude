@@ -30,9 +30,17 @@ def parse_composition(text: str) -> List[Tuple[str, Optional[float]]]:
         if not segment:
             continue
 
+        # Only treat a number as an explicit weight when it carries a unit
+        # (150 г, 0.5 кг) or sits at the very end of the segment (150). A bare
+        # number in the middle of the text is part of the food name itself,
+        # e.g. "яичница из 2 яиц" or "омлет из 2 яиц" - matching those should
+        # not be misread as "2 grams".
         match = None
-        for match in _WEIGHT_RE.finditer(segment):
-            pass  # take the last number found in the segment as the weight
+        for candidate in _WEIGHT_RE.finditer(segment):
+            has_unit = bool(candidate.group(2))
+            trailing = segment[candidate.end():].strip(" -—:.")
+            if has_unit or not trailing:
+                match = candidate  # take the last qualifying number as the weight
 
         if match:
             weight = float(match.group(1).replace(",", "."))
@@ -58,7 +66,9 @@ def compute_composition(text: str, foods: List[FoodItem]) -> List[MatchedItem]:
         if food is None:
             results.append(
                 MatchedItem(
-                    query=name, grams=grams or DEFAULT_PORTION_GRAMS, food=None,
+                    query=name,
+                    grams=grams if grams is not None else DEFAULT_PORTION_GRAMS,
+                    food=None,
                     calories=0, protein=0, fat=0, carbs=0,
                 )
             )
