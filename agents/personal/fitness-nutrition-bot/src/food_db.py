@@ -12,6 +12,7 @@ class FoodItem:
     protein: float
     fat: float
     carbs: float
+    default_grams: Optional[float] = None
 
 
 def normalize(text: str) -> str:
@@ -29,6 +30,7 @@ def load_foods(path: str) -> List[FoodItem]:
             protein=item["protein"],
             fat=item["fat"],
             carbs=item["carbs"],
+            default_grams=item.get("default_grams"),
         )
         for item in raw
     ]

@@ -22,7 +22,7 @@ class MatchedItem:
     carbs: float
 
 
-def parse_composition(text: str) -> List[Tuple[str, float]]:
+def parse_composition(text: str) -> List[Tuple[str, Optional[float]]]:
     segments = re.split(r"[,;\n]+", text)
     items = []
     for segment in segments:
@@ -40,7 +40,9 @@ def parse_composition(text: str) -> List[Tuple[str, float]]:
                 weight *= 1000
             name = (segment[: match.start()] + segment[match.end():]).strip(" -—:.")
         else:
-            weight = DEFAULT_PORTION_GRAMS
+            # No weight in the text - resolved later, once we know whether the
+            # matched food has its own typical portion (e.g. "бутерброд с маслом").
+            weight = None
             name = segment.strip(" -—:.")
 
         if name:
@@ -55,10 +57,15 @@ def compute_composition(text: str, foods: List[FoodItem]) -> List[MatchedItem]:
         food = find_food(name, foods)
         if food is None:
             results.append(
-                MatchedItem(query=name, grams=grams, food=None, calories=0, protein=0, fat=0, carbs=0)
+                MatchedItem(
+                    query=name, grams=grams or DEFAULT_PORTION_GRAMS, food=None,
+                    calories=0, protein=0, fat=0, carbs=0,
+                )
             )
             continue
 
+        if grams is None:
+            grams = food.default_grams or DEFAULT_PORTION_GRAMS
         factor = grams / 100.0
         results.append(
             MatchedItem(
