@@ -57,13 +57,17 @@ nano .env
 
 ```
 TELEGRAM_BOT_TOKEN=токен_от_botfather
-ANTHROPIC_API_KEY=ключ_anthropic
 MSSQL_SERVER=адрес_сервера
 MSSQL_DATABASE=имя_базы
 MSSQL_USER=логин
 MSSQL_PASSWORD=пароль
 ALLOWED_TELEGRAM_USER_IDS=твой_telegram_user_id
 ```
+
+`ANTHROPIC_API_KEY` можно не указывать — Anthropic SDK сам возьмёт учётные
+данные из `ANTHROPIC_AUTH_TOKEN` или из профиля `ant auth login`, если один
+из них уже настроен на сервере (передай переменную окружения в контейнер
+через `.env`, если используешь `ANTHROPIC_AUTH_TOKEN`).
 
 Убедись, что MS SQL Server доступен с этого VDS по сети (порт 1433
 открыт в файрволе/группе безопасности, включён TCP/IP-протокол и SQL

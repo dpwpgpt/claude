@@ -61,12 +61,17 @@ cp .env.example .env
 Заполни `.env`:
 
 - `TELEGRAM_BOT_TOKEN` — токен, полученный у [@BotFather](https://t.me/BotFather).
-- `ANTHROPIC_API_KEY` — ключ Anthropic API.
 - `MSSQL_SERVER`, `MSSQL_PORT`, `MSSQL_DATABASE`, `MSSQL_USER`,
   `MSSQL_PASSWORD` — подключение к MS SQL Server (SQL Server должен быть
   доступен по сети с той машины, где работает бот, и иметь включённый
   TCP/IP и SQL Server Authentication).
 - `ALLOWED_TELEGRAM_USER_IDS` — см. раздел «Безопасность» выше.
+
+`ANTHROPIC_API_KEY` заполнять не обязательно: Anthropic SDK сам найдёт
+учётные данные — через `ANTHROPIC_AUTH_TOKEN` или через профиль,
+сохранённый командой `ant auth login`, если один из них уже настроен на
+машине, где запускается бот. Ключ нужен, только если ни того ни другого
+нет.
 
 ## Запуск
 
