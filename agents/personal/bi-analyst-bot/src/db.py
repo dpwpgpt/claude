@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pymssql
 
@@ -130,13 +130,17 @@ class Database:
             return columns, rows, truncated
 
 
-def format_schema(tables: List[TableInfo]) -> str:
+def format_schema(tables: List[TableInfo], glossary: Optional[Dict[str, Dict[str, str]]] = None) -> str:
+    glossary = glossary or {}
     lines = []
     for t in tables:
+        table_glossary = glossary.get(t.full_name, {})
         parts = []
         for c in t.columns:
             marker = " PK" if c.name in t.primary_keys else ""
             null_marker = "" if c.is_nullable else " NOT NULL"
-            parts.append(f"{c.name} {c.data_type}{marker}{null_marker}")
+            description = table_glossary.get(c.name)
+            description_marker = f" /* {description} */" if description else ""
+            parts.append(f"{c.name} {c.data_type}{marker}{null_marker}{description_marker}")
         lines.append(f"{t.full_name}({', '.join(parts)})")
     return "\n".join(lines)

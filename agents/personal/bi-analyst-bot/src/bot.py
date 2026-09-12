@@ -6,6 +6,7 @@ from telegram.ext import Application, ApplicationBuilder, CommandHandler, Messag
 from . import db as dbmod
 from . import handlers as h
 from .config import load_config
+from .glossary import load_glossary
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,8 +24,10 @@ def build_application() -> Application:
         timeout=config.query_timeout_seconds,
     )
 
+    glossary = load_glossary(config.column_glossary_path)
+
     tables = database.load_schema(config.allowed_schemas, config.allowed_tables)
-    schema_text = dbmod.format_schema(tables)
+    schema_text = dbmod.format_schema(tables, glossary)
     logger.info("Загружена схема БД: таблиц — %d", len(tables))
 
     application = ApplicationBuilder().token(config.telegram_token).build()
@@ -32,6 +35,8 @@ def build_application() -> Application:
     application.bot_data["schema_text"] = schema_text
     application.bot_data["allowed_schemas"] = config.allowed_schemas
     application.bot_data["allowed_tables"] = config.allowed_tables
+    application.bot_data["glossary"] = glossary
+    application.bot_data["column_glossary_path"] = config.column_glossary_path
     application.bot_data["anthropic_client"] = anthropic.Anthropic()
     application.bot_data["anthropic_model"] = config.anthropic_model
     application.bot_data["max_rows"] = config.max_rows

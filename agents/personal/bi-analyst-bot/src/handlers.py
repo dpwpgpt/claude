@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from . import db as dbmod
 from . import formatting, sql_guard
+from .glossary import load_glossary
 from .nl2sql import NoQueryError, generate_sql
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,9 @@ async def refresh_schema(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.exception("Не удалось обновить схему базы данных")
         await update.message.reply_text("Не удалось подключиться к базе данных, чтобы обновить схему.")
         return
-    context.bot_data["schema_text"] = dbmod.format_schema(tables)
+    glossary = load_glossary(context.bot_data["column_glossary_path"])
+    context.bot_data["glossary"] = glossary
+    context.bot_data["schema_text"] = dbmod.format_schema(tables, glossary)
     await update.message.reply_text(f"Схема обновлена: таблиц — {len(tables)}.")
 
 

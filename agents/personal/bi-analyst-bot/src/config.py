@@ -22,6 +22,7 @@ class Config:
     max_rows: int
     query_timeout_seconds: int
     show_generated_sql: bool
+    column_glossary_path: str
 
 
 def _require(name: str) -> str:
@@ -66,6 +67,8 @@ def _parse_bool(raw: Optional[str], default: bool) -> bool:
 
 
 def load_config() -> Config:
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     return Config(
         telegram_token=_require("TELEGRAM_BOT_TOKEN"),
         mssql_server=_require("MSSQL_SERVER"),
@@ -80,4 +83,6 @@ def load_config() -> Config:
         max_rows=int(os.environ.get("MAX_ROWS") or "200"),
         query_timeout_seconds=int(os.environ.get("QUERY_TIMEOUT_SECONDS") or "30"),
         show_generated_sql=_parse_bool(os.environ.get("SHOW_GENERATED_SQL"), True),
+        column_glossary_path=os.environ.get("COLUMN_GLOSSARY_PATH")
+        or os.path.join(base_dir, "data", "column_glossary.json"),
     )

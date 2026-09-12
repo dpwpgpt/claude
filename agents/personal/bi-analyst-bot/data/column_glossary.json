@@ -1,0 +1,13 @@
+{
+  "dbo.DataSet_Table_1_MainLombard": {
+    "Date": "Дата",
+    "Region": "Регион",
+    "Filial": "Филиал, отделение",
+    "Plan": "План",
+    "BEP1": "SLE, ТБ1",
+    "Tariff": "Схема, тариф, схема кредитования",
+    "TariffType": "Группа тарифов",
+    "Interest": "Сбор%, выручка",
+    "ZalogMassa": "Залоговая масса"
+  }
+}
