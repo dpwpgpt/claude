@@ -63,8 +63,9 @@ async def refresh_schema(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     database: dbmod.Database = context.bot_data["database"]
     allowed_schemas = context.bot_data["allowed_schemas"]
+    allowed_tables = context.bot_data["allowed_tables"]
     try:
-        tables = database.load_schema(allowed_schemas)
+        tables = database.load_schema(allowed_schemas, allowed_tables)
     except Exception:
         logger.exception("Не удалось обновить схему базы данных")
         await update.message.reply_text("Не удалось подключиться к базе данных, чтобы обновить схему.")

@@ -23,7 +23,7 @@ def build_application() -> Application:
         timeout=config.query_timeout_seconds,
     )
 
-    tables = database.load_schema(config.allowed_schemas)
+    tables = database.load_schema(config.allowed_schemas, config.allowed_tables)
     schema_text = dbmod.format_schema(tables)
     logger.info("Загружена схема БД: таблиц — %d", len(tables))
 
@@ -31,6 +31,7 @@ def build_application() -> Application:
     application.bot_data["database"] = database
     application.bot_data["schema_text"] = schema_text
     application.bot_data["allowed_schemas"] = config.allowed_schemas
+    application.bot_data["allowed_tables"] = config.allowed_tables
     application.bot_data["anthropic_client"] = anthropic.Anthropic()
     application.bot_data["anthropic_model"] = config.anthropic_model
     application.bot_data["max_rows"] = config.max_rows

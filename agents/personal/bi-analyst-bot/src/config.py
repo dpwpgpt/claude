@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import FrozenSet, List, Optional
+from typing import FrozenSet, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -18,6 +18,7 @@ class Config:
     anthropic_model: str
     allowed_user_ids: FrozenSet[int]
     allowed_schemas: Optional[List[str]]
+    allowed_tables: Optional[List[Tuple[str, str]]]
     max_rows: int
     query_timeout_seconds: int
     show_generated_sql: bool
@@ -42,6 +43,22 @@ def _parse_schemas(raw: Optional[str]) -> Optional[List[str]]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def _parse_tables(raw: Optional[str]) -> Optional[List[Tuple[str, str]]]:
+    if not raw:
+        return None
+    tables = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "." in entry:
+            schema, table = entry.split(".", 1)
+        else:
+            schema, table = "dbo", entry
+        tables.append((schema.strip(), table.strip()))
+    return tables or None
+
+
 def _parse_bool(raw: Optional[str], default: bool) -> bool:
     if raw is None or not raw.strip():
         return default
@@ -59,6 +76,7 @@ def load_config() -> Config:
         anthropic_model=os.environ.get("ANTHROPIC_MODEL") or "claude-opus-5",
         allowed_user_ids=_parse_user_ids(os.environ.get("ALLOWED_TELEGRAM_USER_IDS")),
         allowed_schemas=_parse_schemas(os.environ.get("MSSQL_ALLOWED_SCHEMAS")),
+        allowed_tables=_parse_tables(os.environ.get("MSSQL_ALLOWED_TABLES")),
         max_rows=int(os.environ.get("MAX_ROWS") or "200"),
         query_timeout_seconds=int(os.environ.get("QUERY_TIMEOUT_SECONDS") or "30"),
         show_generated_sql=_parse_bool(os.environ.get("SHOW_GENERATED_SQL"), True),
